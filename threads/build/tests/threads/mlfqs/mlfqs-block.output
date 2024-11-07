@@ -4,7 +4,7 @@ Kernel command line: -q -mlfqs run mlfqs-block
 Pintos booting with: 
 	base_mem: 0x0 ~ 0x9fc00 (Usable: 639 kB)
 	ext_mem: 0x100000 ~ 0x13e0000 (Usable: 19,328 kB)
-Calibrating timer...  104,755,200 loops/s.
+Calibrating timer...  91,648,000 loops/s.
 Boot complete.
 Executing 'mlfqs-block':
 (mlfqs-block) begin
@@ -17,8 +17,23 @@ Executing 'mlfqs-block':
 (mlfqs-block) Block thread should have already acquired lock.
 (mlfqs-block) end
 Execution of 'mlfqs-block' complete.
-Timer: 3021 ticks
-Thread: 500 idle ticks, 2521 kernel ticks, 0 user ticks
-Console: 794 characters output
+Timer: 3023 ticks
+Thread: 500 idle ticks, 2523 kernel ticks, 0 user ticks
+Console: 793 characters output
 Keyboard: 0 keys pressed
-Powering off...
+Interrupt 0x0e (#PF Page-Fault Exception) at rip=8004234000
+ cr2=0000000000000000 error=               0
+rax 0000000000000000 rbx 0000000000204400 rcx 00000080040b8000 rdx 00000000000003d4
+rsp 0000008004000f10 rbp 0000008004000f30 rsi 000000000000800f rdi 0000000000000001
+rip 0000008004234000 r8 0000008004000ec8  r9 0000008004216b76 r10 0000000000000000
+r11 0000000000000000 r12 0000000000000000 r13 0000000000000000 r14 0000000000000000
+r15 0000000000000000 rflags 00200246
+es: 0010 ds: 0010 cs: 0008 ss: 0010
+Kernel PANIC at ../../threads/interrupt.c:361 in intr_handler(): Unexpected interrupt
+Call stack: 0x800421388e 0x8004208ab6 0x8004208e68 0x8004210d91 0x800420d950 0x800420683f 0x80042067dd 0x800420613d.
+The `backtrace' program can make call stacks useful.
+Read "Backtraces" in the "Debugging Tools" chapter
+of the Pintos documentation for more information.
+Timer: 3025 ticks
+Thread: 500 idle ticks, 2525 kernel ticks, 0 user ticks
+Console: 1
