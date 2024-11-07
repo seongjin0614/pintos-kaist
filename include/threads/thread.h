@@ -92,6 +92,8 @@ struct thread {
 	char name[16];                      /* Name (for debugging purposes). */
 	int priority;                       /* Priority. */
 
+	//+wakeup time
+	int64_t wakeup_ticks;
 	/* Shared between thread.c and synch.c. */
 	struct list_elem elem;              /* List element. */
 
@@ -140,6 +142,14 @@ int thread_get_nice (void);
 void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
+
+void thread_sleep(int64_t ticks);
+bool cmp_thread_ticks(const struct list_elem *a, const struct list_elem *b, void *aux);
+void thread_wakeup(int64_t global_ticks);
+
+bool cmp_thread_priority(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED);
+void preempt_priority(void);
+bool cmp_sema_priority(const struct list_elem *a, const struct list_elem *b, void *aux);
 
 void do_iret (struct intr_frame *tf);
 
