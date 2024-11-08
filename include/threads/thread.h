@@ -86,6 +86,10 @@ typedef int tid_t;
  * ready state is on the run queue, whereas only a thread in the
  * blocked state is on a semaphore wait list. */
 struct thread {
+
+	int64_t wakeup;
+
+
 	/* Owned by thread.c. */
 	tid_t tid;                          /* Thread identifier. */
 	enum thread_status status;          /* Thread state. */
@@ -142,5 +146,10 @@ int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
 
 void do_iret (struct intr_frame *tf);
+bool thread_compare_priority(const struct list_elem *l, const struct list_elem *s, void *aux UNUSED);
+void thread_test_preemption(void);
+void thread_sleep(int64_t ticks);
+void thread_awake(int64_t ticks);
+
 
 #endif /* threads/thread.h */
