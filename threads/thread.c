@@ -240,14 +240,14 @@ void thread_block(void) {
    be important: if the caller had disabled interrupts itself,
    it may expect that it can atomically unblock a thread and
    update other data. */
+
 void thread_unblock(struct thread *t) {
   enum intr_level old_level;
-
   ASSERT(is_thread(t));
-
   old_level = intr_disable();
   ASSERT(t->status == THREAD_BLOCKED);
-  list_insert_ordered(&ready_list, &t->elem, thread_priority_compare, NULL);
+
+  list_insert_ordered(&ready_list, &t->elem, cmp_thread_priority, NULL);
 
   t->status = THREAD_READY;
   intr_set_level(old_level);
@@ -297,13 +297,12 @@ void thread_exit(void) {
 void thread_yield(void) {
   struct thread *curr = thread_current();
   enum intr_level old_level;
-
   ASSERT(!intr_context());
-
   old_level = intr_disable();
+
   if (curr != idle_thread)
-    list_insert_ordered(&ready_list, &curr->elem, thread_priority_compare,
-                        NULL);
+    list_insert_ordered(&ready_list, &curr->elem, cmp_thread_priority, NULL);
+
   do_schedule(THREAD_READY);
   intr_set_level(old_level);
 }
@@ -607,6 +606,7 @@ void thread_awake(int64_t ticks) {
     if (t->wakeup_tick <= ticks) {
       e = list_remove(e);
       thread_unblock(t);
+      thread_test_preemtion();
     } else {
       e = list_next(e);
     }
@@ -625,12 +625,10 @@ bool wake_up_time_compare(const struct list_elem *a, const struct list_elem *b,
   return t1->wakeup_tick < t2->wakeup_tick;
 }
 
-bool thread_priority_compare(const struct list_elem *a,
-                             const struct list_elem *b) {
-  struct thread *t1 = list_entry(a, struct thread, elem);
-  struct thread *t2 = list_entry(b, struct thread, elem);
-
-  return t1->priority > t2->priority;
+bool cmp_thread_priority(const struct list_elem *a, const struct list_elem *b) {
+  struct thread *st_a = list_entry(a, struct thread, elem);
+  struct thread *st_b = list_entry(b, struct thread, elem);
+  return st_a->priority > st_b->priority;
 }
 
 void thread_test_preemtion(void) {
