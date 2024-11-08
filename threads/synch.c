@@ -187,7 +187,17 @@ void lock_acquire(struct lock *lock) {
   ASSERT(!intr_context());
   ASSERT(!lock_held_by_current_thread(lock));
 
+  struct thread *cur = thread_current();
+  if (lock->holder) {
+    cur->wait_on_lock = lock;
+    list_insert_ordered(&lock->holder->donations, &cur->donation_elem,
+                        cmp_thread_donate_priority, 0);
+    donate_priority();
+  }
+
   sema_down(&lock->semaphore);
+
+  cur->wait_on_lock = NULL;
   lock->holder = thread_current();
 }
 
@@ -218,6 +228,10 @@ bool lock_try_acquire(struct lock *lock) {
 void lock_release(struct lock *lock) {
   ASSERT(lock != NULL);
   ASSERT(lock_held_by_current_thread(lock));
+
+  remove_with_lock(lock); // 이 lock 을 사용하기 위해 나에게 priority를 빌려준
+                          // 스레드들을 donations 리스트에서 제거
+  refresh_priority(); // priority를 재설정 해주는 작업이 필요하다.
 
   lock->holder = NULL;
   sema_up(&lock->semaphore);
