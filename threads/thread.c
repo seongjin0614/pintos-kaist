@@ -61,6 +61,9 @@ static void init_thread (struct thread *, const char *name, int priority);  // �
 static void do_schedule(int status);  				   // 스케줄링 수행
 static void schedule (void);  						   // 현재 스레드를 스케줄링 큐에 추가하여 전환
 static tid_t allocate_tid (void);  					   // 고유 스레드 ID 할당
+static void thread_launch (struct thread *th);
+void do_iret (struct intr_frame *tf);
+
 
 /* 유효한 스레드인지 검사하는 매크로 */
 #define is_thread(t) ((t) != NULL && (t)->magic == THREAD_MAGIC)
@@ -345,4 +348,250 @@ void preempt_priority(void)
 	
 	if (curr->priority < ready->priority)// 만약 현재 스레드의 우선순위가 준비 리스트의 가장 높은 우선순위보다 낮다면
 		thread_yield();					 // thread_yield()를 호출하여 현재 스레드가 CPU를 양보하고, 준비 리스트에서 더 높은 우선순위의 스레드가 실행되도록 합니다.
+}
+
+
+static void
+init_thread (struct thread *t, const char *name, int priority) {
+	ASSERT (t != NULL);
+	ASSERT (PRI_MIN <= priority && priority <= PRI_MAX);
+	ASSERT (name != NULL);
+
+	memset (t, 0, sizeof *t);
+	t->status = THREAD_BLOCKED;
+	strlcpy (t->name, name, sizeof t->name);
+	t->tf.rsp = (uint64_t) t + PGSIZE - sizeof (void *);
+	t->priority = priority;
+	t->magic = THREAD_MAGIC;
+
+	//priority donation
+	t->init_priority = priority;
+	t->wait_on_lock = NULL;
+	list_init(&(t->donations));
+
+}
+
+static tid_t
+allocate_tid (void) {
+	static tid_t next_tid = 1;
+	tid_t tid;
+
+	lock_acquire (&tid_lock);
+	tid = next_tid++;
+	lock_release (&tid_lock);
+
+	return tid;
+}
+
+static void
+idle (void *idle_started_ UNUSED) {
+	struct semaphore *idle_started = idle_started_;
+
+	idle_thread = thread_current ();
+	sema_up (idle_started);
+
+	for (;;) {
+		/* Let someone else run. */
+		intr_disable ();
+		thread_block ();
+
+		/* Re-enable interrupts and wait for the next one.
+
+		   The `sti' instruction disables interrupts until the
+		   completion of the next instruction, so these two
+		   instructions are executed atomically.  This atomicity is
+		   important; otherwise, an interrupt could be handled
+		   between re-enabling interrupts and waiting for the next
+		   one to occur, wasting as much as one clock tick worth of
+		   time.
+
+		   See [IA32-v2a] "HLT", [IA32-v2b] "STI", and [IA32-v3a]
+		   7.11.1 "HLT Instruction". */
+		asm volatile ("sti; hlt" : : : "memory");
+	}
+}
+
+static void
+kernel_thread (thread_func *function, void *aux) {
+	ASSERT (function != NULL);
+
+	intr_enable ();       /* The scheduler runs with interrupts off. */
+	function (aux);       /* Execute the thread function. */
+	thread_exit ();       /* If function() returns, kill the thread. */
+}
+
+static void
+do_schedule(int status) {
+	ASSERT (intr_get_level () == INTR_OFF);
+	ASSERT (thread_current()->status == THREAD_RUNNING);
+	while (!list_empty (&destruction_req)) {
+		struct thread *victim =
+			list_entry (list_pop_front (&destruction_req), struct thread, elem);
+		palloc_free_page(victim);
+	}
+	thread_current ()->status = status;
+	schedule ();
+}
+
+
+static void
+schedule (void) {
+	struct thread *curr = running_thread ();
+	struct thread *next = next_thread_to_run ();
+
+	ASSERT (intr_get_level () == INTR_OFF);
+	ASSERT (curr->status != THREAD_RUNNING);
+	ASSERT (is_thread (next));
+	/* Mark us as running. */
+	next->status = THREAD_RUNNING;
+
+	/* Start new time slice. */
+	thread_ticks = 0;
+
+#ifdef USERPROG
+	/* Activate the new address space. */
+	process_activate (next);
+#endif
+
+	if (curr != next) {
+		/* If the thread we switched from is dying, destroy its struct
+		   thread. This must happen late so that thread_exit() doesn't
+		   pull out the rug under itself.
+		   We just queuing the page free reqeust here because the page is
+		   currently used by the stack.
+		   The real destruction logic will be called at the beginning of the
+		   schedule(). */
+		if (curr && curr->status == THREAD_DYING && curr != initial_thread) {
+			ASSERT (curr != next);
+			list_push_back (&destruction_req, &curr->elem);
+		}
+
+		/* Before switching the thread, we first save the information
+		 * of current running. */
+		thread_launch (next);
+	}
+}
+
+
+static struct thread *
+next_thread_to_run (void) {
+	if (list_empty (&ready_list))
+		return idle_thread;
+	else
+		return list_entry (list_pop_front (&ready_list), struct thread, elem);
+}
+
+
+static void
+thread_launch (struct thread *th) {
+	uint64_t tf_cur = (uint64_t) &running_thread ()->tf;
+	uint64_t tf = (uint64_t) &th->tf;
+	ASSERT (intr_get_level () == INTR_OFF);
+
+	/* The main switching logic.
+	 * We first restore the whole execution context into the intr_frame
+	 * and then switching to the next thread by calling do_iret.
+	 * Note that, we SHOULD NOT use any stack from here
+	 * until switching is done. */
+	__asm __volatile (
+			/* Store registers that will be used. */
+			"push %%rax\n"
+			"push %%rbx\n"
+			"push %%rcx\n"
+			/* Fetch input once */
+			"movq %0, %%rax\n"
+			"movq %1, %%rcx\n"
+			"movq %%r15, 0(%%rax)\n"
+			"movq %%r14, 8(%%rax)\n"
+			"movq %%r13, 16(%%rax)\n"
+			"movq %%r12, 24(%%rax)\n"
+			"movq %%r11, 32(%%rax)\n"
+			"movq %%r10, 40(%%rax)\n"
+			"movq %%r9, 48(%%rax)\n"
+			"movq %%r8, 56(%%rax)\n"
+			"movq %%rsi, 64(%%rax)\n"
+			"movq %%rdi, 72(%%rax)\n"
+			"movq %%rbp, 80(%%rax)\n"
+			"movq %%rdx, 88(%%rax)\n"
+			"pop %%rbx\n"              // Saved rcx
+			"movq %%rbx, 96(%%rax)\n"
+			"pop %%rbx\n"              // Saved rbx
+			"movq %%rbx, 104(%%rax)\n"
+			"pop %%rbx\n"              // Saved rax
+			"movq %%rbx, 112(%%rax)\n"
+			"addq $120, %%rax\n"
+			"movw %%es, (%%rax)\n"
+			"movw %%ds, 8(%%rax)\n"
+			"addq $32, %%rax\n"
+			"call __next\n"         // read the current rip.
+			"__next:\n"
+			"pop %%rbx\n"
+			"addq $(out_iret -  __next), %%rbx\n"
+			"movq %%rbx, 0(%%rax)\n" // rip
+			"movw %%cs, 8(%%rax)\n"  // cs
+			"pushfq\n"
+			"popq %%rbx\n"
+			"mov %%rbx, 16(%%rax)\n" // eflags
+			"mov %%rsp, 24(%%rax)\n" // rsp
+			"movw %%ss, 32(%%rax)\n"
+			"mov %%rcx, %%rdi\n"
+			"call do_iret\n"
+			"out_iret:\n"
+			: : "g"(tf_cur), "g" (tf) : "memory"
+			);
+}
+
+
+/* Sets the current thread's nice value to NICE. */
+void
+thread_set_nice (int nice UNUSED) {
+	/* TODO: Your implementation goes here */
+}
+
+/* Returns the current thread's nice value. */
+int
+thread_get_nice (void) {
+	/* TODO: Your implementation goes here */
+	return 0;
+}
+
+/* Returns 100 times the system load average. */
+int
+thread_get_load_avg (void) {
+	/* TODO: Your implementation goes here */
+	return 0;
+}
+
+/* Returns 100 times the current thread's recent_cpu value. */
+int
+thread_get_recent_cpu (void) {
+	/* TODO: Your implementation goes here */
+	return 0;
+}
+
+void
+do_iret (struct intr_frame *tf) {
+	__asm __volatile(
+			"movq %0, %%rsp\n"
+			"movq 0(%%rsp),%%r15\n"
+			"movq 8(%%rsp),%%r14\n"
+			"movq 16(%%rsp),%%r13\n"
+			"movq 24(%%rsp),%%r12\n"
+			"movq 32(%%rsp),%%r11\n"
+			"movq 40(%%rsp),%%r10\n"
+			"movq 48(%%rsp),%%r9\n"
+			"movq 56(%%rsp),%%r8\n"
+			"movq 64(%%rsp),%%rsi\n"
+			"movq 72(%%rsp),%%rdi\n"
+			"movq 80(%%rsp),%%rbp\n"
+			"movq 88(%%rsp),%%rdx\n"
+			"movq 96(%%rsp),%%rcx\n"
+			"movq 104(%%rsp),%%rbx\n"
+			"movq 112(%%rsp),%%rax\n"
+			"addq $120,%%rsp\n"
+			"movw 8(%%rsp),%%ds\n"
+			"movw (%%rsp),%%es\n"
+			"addq $32, %%rsp\n"
+			"iretq"
+			: : "g" ((uint64_t) tf) : "memory");
 }
