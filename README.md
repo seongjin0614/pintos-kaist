@@ -80,10 +80,3 @@
 - 앞으로는 단순한 개념적 이해를 넘어서, **운영체제의 전반적인 구조와 시스템 레벨의 세부적인 구현 방식까지 탐구**하는 방향으로 학습 계획  
 
 ---
-
-## 🏃 **실행 방법 및 빌드 가이드**
-
-1️⃣ **GitHub 저장소 클론**  
-```bash
-git clone https://github.com/seongjin0614/pintos-kaist.git
-cd pintos-kaist
