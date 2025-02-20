@@ -6,9 +6,8 @@
 
 ---
 
-## 🔗 **프로젝트 링크 및 GitHub 저장소**
+## 🔗 **프로젝트 발표자료**
 
-- 🗂 **GitHub 저장소**: [PintOS-KAIST Repository](https://github.com/seongjin0614/pintos-kaist)  
 - 💿 **프로젝트 아카이브**:  
   - [Part 1: Threads](http://naver.me/xeAQuXw4)  
   - [Part 2: User Programs](http://naver.me/5Q3g9Frm)  
