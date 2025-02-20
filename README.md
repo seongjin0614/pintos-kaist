@@ -1,7 +1,4 @@
-## 📸 프로젝트 스크린샷
-
-![프로젝트 미리보기](https://user-images.githubusercontent.com/사용자아이디/이미지파일명.png)
-
+<img src="https://user-images.githubusercontent.com/사용자아이디/이미지파일명.png" width="600"/>
 
 # 📚 **PintOS-KAIST 운영체제 프로젝트**
 
